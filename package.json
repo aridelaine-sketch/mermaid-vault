@@ -1,0 +1,49 @@
+{
+  "name": "mermaid-vault",
+  "version": "1.0.0",
+  "description": "A local-first personal library for Mermaid diagrams — write raw Mermaid, organize it into folders and tags, and export to PNG, SVG, or PDF.",
+  "main": "main.js",
+  "author": "you",
+  "license": "MIT",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "start:sandbox-off": "electron . --no-sandbox",
+    "smoke-test": "node scripts/smoke-test.js",
+    "dist:linux": "electron-builder --linux AppImage deb",
+    "pack": "electron-builder --dir"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8",
+    "mermaid": "^11.4.1"
+  },
+  "build": {
+    "appId": "com.mermaidvault.app",
+    "productName": "Mermaid Vault",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "src/**/*",
+      "build/icon.png",
+      "!src/vendor/mermaid.min.js.map"
+    ],
+    "linux": {
+      "target": [
+        { "target": "AppImage", "arch": ["x64"] },
+        { "target": "deb", "arch": ["x64"] }
+      ],
+      "category": "Office",
+      "icon": "build/icon.png",
+      "desktop": {
+        "Name": "Mermaid Vault",
+        "Comment": "Personal Mermaid diagram library",
+        "Categories": "Office;Graphics;"
+      }
+    }
+  }
+}

@@ -1,0 +1,11 @@
+node_modules/
+release/
+dist/
+*.log
+npm-debug.log*
+.smoke-out/
+.smoke-shots-latest/
+.smoke-shots-final/
+smoke-test.png
+.DS_Store
+*.tmp

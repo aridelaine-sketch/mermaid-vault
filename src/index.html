@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'none';" />
+<title>Mermaid Vault</title>
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+<div id="app">
+
+  <aside id="sidebar">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true">◈</span>
+      <span class="brand-name">Mermaid Vault</span>
+    </div>
+
+    <button id="new-diagram-btn" class="btn-new">New diagram</button>
+
+    <div class="search-wrap">
+      <input id="search-input" type="search" placeholder="Search title, tags, code…" autocomplete="off" />
+    </div>
+
+    <nav class="nav-block">
+      <div class="nav-block-header">
+        <span>Folders</span>
+        <button id="add-folder-btn" class="icon-btn" title="New folder" aria-label="New folder">+</button>
+      </div>
+      <ul id="folder-list" class="nav-list"></ul>
+    </nav>
+
+    <nav class="nav-block">
+      <div class="nav-block-header"><span>Tags</span></div>
+      <ul id="tag-list" class="nav-list tag-nav-list"></ul>
+    </nav>
+
+    <button id="favorites-toggle" class="nav-flat-item">
+      <span class="star">★</span> Favorites
+    </button>
+
+    <div class="sidebar-footer">
+      <button id="export-library-btn" class="link-btn">Export library</button>
+      <button id="import-library-btn" class="link-btn">Import library</button>
+    </div>
+  </aside>
+
+  <main id="main">
+
+    <section id="library-view">
+      <header class="view-header">
+        <h1 id="view-title">All Diagrams</h1>
+        <div class="view-actions">
+          <div class="sort-wrap">
+            <select id="sort-select" aria-label="Sort by">
+              <option value="updated">Last updated</option>
+              <option value="created">Date created</option>
+              <option value="title">Title A–Z</option>
+            </select>
+          </div>
+          <button id="templates-btn" class="secondary">Templates</button>
+        </div>
+      </header>
+
+      <div id="card-grid" class="card-grid"></div>
+
+      <div id="empty-state" class="empty-state hidden">
+        <p class="empty-title">Nothing here yet</p>
+        <p class="empty-body">Start from a template, or write raw Mermaid from a blank canvas.</p>
+        <button id="empty-new-btn" class="btn-new">New diagram</button>
+      </div>
+    </section>
+
+    <section id="editor-view" class="hidden">
+      <header class="editor-header">
+        <button id="back-btn" class="icon-btn back-btn" title="Back to library" aria-label="Back to library">←</button>
+        <input id="title-input" class="title-input" placeholder="Untitled diagram" maxlength="120" />
+        <div class="editor-actions">
+          <button id="favorite-btn" class="icon-btn" title="Toggle favorite" aria-label="Toggle favorite">☆</button>
+          <button id="info-btn" class="secondary">Details</button>
+          <div class="export-menu">
+            <button id="export-btn" class="secondary">Export</button>
+            <div id="export-dropdown" class="dropdown hidden">
+              <button type="button" data-format="png">PNG image</button>
+              <button type="button" data-format="svg">SVG vector</button>
+              <button type="button" data-format="pdf">PDF document</button>
+            </div>
+          </div>
+          <button id="delete-btn" class="danger">Delete</button>
+        </div>
+      </header>
+
+      <div class="editor-body">
+        <div class="pane pane-code">
+          <div class="pane-label">Mermaid source</div>
+          <textarea id="code-input" spellcheck="false" wrap="off" placeholder="flowchart TD&#10;    A --> B"></textarea>
+        </div>
+        <div class="pane pane-preview">
+          <div class="pane-label">Live preview</div>
+          <div id="preview-surface" class="preview-surface">
+            <div id="preview-render"></div>
+          </div>
+          <div id="error-banner" class="error-banner hidden"></div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <aside id="details-drawer" class="drawer hidden">
+    <div class="drawer-header">
+      <h2>Details</h2>
+      <button id="close-drawer" class="icon-btn" aria-label="Close details">×</button>
+    </div>
+
+    <label class="field">
+      <span class="field-label">Description</span>
+      <textarea id="desc-input" rows="4" placeholder="What is this diagram for?"></textarea>
+    </label>
+
+    <label class="field">
+      <span class="field-label">Folder</span>
+      <select id="folder-select"></select>
+    </label>
+
+    <div class="field">
+      <span class="field-label">Tags</span>
+      <div id="tag-input-wrap" class="tag-input-wrap">
+        <div id="tag-chips" class="tag-chips"></div>
+        <input id="tag-input" placeholder="Add a tag, press Enter" />
+      </div>
+    </div>
+
+    <div class="meta-timestamps">
+      <div><span class="meta-label">Created</span><span id="meta-created"></span></div>
+      <div><span class="meta-label">Updated</span><span id="meta-updated"></span></div>
+    </div>
+  </aside>
+
+  <div id="template-modal" class="modal hidden">
+    <div class="modal-card modal-card-lg">
+      <div class="modal-header">
+        <h2>Start from a template</h2>
+        <button id="close-template-modal" class="icon-btn" aria-label="Close">×</button>
+      </div>
+      <div id="template-grid" class="template-grid"></div>
+      <div class="modal-footer">
+        <button id="blank-diagram-btn" class="secondary">Start from a blank diagram</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="folder-modal" class="modal hidden">
+    <div class="modal-card modal-card-sm">
+      <div class="modal-header">
+        <h2>New folder</h2>
+        <button id="close-folder-modal" class="icon-btn" aria-label="Close">×</button>
+      </div>
+      <label class="field">
+        <span class="field-label">Folder name</span>
+        <input id="folder-name-input" maxlength="60" placeholder="e.g. Architecture" />
+      </label>
+      <div class="modal-actions">
+        <button id="folder-cancel-btn" class="secondary">Cancel</button>
+        <button id="folder-create-btn" class="primary">Create folder</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="confirm-modal" class="modal hidden">
+    <div class="modal-card modal-card-sm">
+      <p id="confirm-message" class="confirm-message"></p>
+      <div class="modal-actions">
+        <button id="confirm-cancel" class="secondary">Cancel</button>
+        <button id="confirm-ok" class="danger">Delete</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast hidden"></div>
+</div>
+
+<script src="templates.js"></script>
+<script src="vendor/mermaid.min.js"></script>
+<script src="renderer.js"></script>
+</body>
+</html>
