@@ -8,7 +8,8 @@ This exists because there wasn't a Linux desktop app that combined a raw-Mermaid
 
 ## Features
 
-- **Raw Mermaid in, live diagram out.** A split view: your Mermaid source on the left, a debounced live render on the right. Parse errors show inline without blanking your last good render.
+- **Raw Mermaid in, live diagram out.** A split view: your Mermaid source on the left, a debounced live render on the right. Parse errors show inline without blanking your last good render. The preview supports full pan (click-drag) and zoom (scroll wheel or the +/−/fit controls), so working with large diagrams is actually comfortable.
+- **Visual editor, bidirectional.** For flowcharts specifically, a "Visual" tab next to "Source" lets you build the diagram by clicking: double-click empty space to add a node, drag a node's teal handle to another node to connect them, double-click to rename, pick shapes/connector styles from the inspector bar. Every edit regenerates clean Mermaid text instantly, and opening Visual mode on existing flowchart code parses it back into nodes and edges (auto-arranging anything without a stored layout, while preserving positions you've already set). Diagrams using subgraphs, styling, or other diagram types show a plain explanation instead of silently mangling what they don't yet support.
 - **Folders and tags.** Organize diagrams into folders from the sidebar; tag them freely; filter by folder, tag, or favorite; full-text search across title, description, tags, and the Mermaid source itself.
 - **Title, description, metadata.** Every diagram has a title, a free-text description, tags, a folder, favorite status, and created/updated timestamps.
 - **12 built-in templates** — flowchart, sequence, class, state, ER, Gantt, pie, user journey, git graph, mind map, quadrant chart, timeline — or start from a blank canvas with entirely custom Mermaid.
@@ -54,8 +55,10 @@ preload.js         contextBridge — the only API surface the page can reach
 src/
   index.html       App shell
   styles.css       Design system (see "Design" below)
-  renderer.js       All UI logic: state, CRUD, search/filter, export
+  renderer.js       All UI logic: state, CRUD, search/filter, export, pan/zoom, visual-editor wiring
   templates.js      The 12 built-in Mermaid templates
+  flowgraph.js      Pure-logic flowchart <-> Mermaid text parser/generator + auto-layout (unit-testable in plain Node, no DOM)
+  visual-editor.js  The interactive SVG node/edge canvas for the Visual tab
   vendor/
     mermaid.min.js  Mermaid's UMD build, vendored for fully-offline use
 scripts/
@@ -73,7 +76,9 @@ The visual language is deliberately not another dark-mode SaaS clone: it's built
 
 ## Testing
 
-`npm run smoke-test` launches the actual app (via Xvfb if there's no display) and drives the real UI — not a mock: it clicks through the template gallery, fills in title/description/tags/folder, favorites a diagram, exports PNG/SVG/PDF, verifies each exported file's binary signature, adds more diagrams, and filters by tag — then writes screenshots and the exported files to a temp directory so a build can be verified without a human at the keyboard. This is exactly the harness used to catch and fix, during development, a duplicate-folder bug, a stale-sidebar-count bug, and the canvas/max-width export bugs described above.
+`npm run smoke-test` launches the actual app (via Xvfb if there's no display) and drives the real UI — not a mock: it clicks through the template gallery, fills in title/description/tags/folder, favorites a diagram, pans and zooms the live preview, switches to the Visual tab and confirms the flowchart parsed correctly, adds a node by double-click, connects it to an existing node by dragging, confirms the Mermaid source regenerated correctly, exports PNG/SVG/PDF, verifies each exported file's binary signature, adds more diagrams, and filters by tag — then writes screenshots and the exported files to a temp directory so a build can be verified without a human at the keyboard. This exact harness is what caught, during development, a duplicate-folder bug, a stale-sidebar-count bug, the canvas/max-width export bugs described above, an auto-layout algorithm that stalled completely on any cyclic flowchart (i.e. any diagram with a retry/validation loop), and a missing rename prompt when adding a node visually.
+
+`flowgraph.js` (the Mermaid <-> graph-model converter) has no DOM dependency, so its parser/generator round-trip can also be exercised directly in plain Node — see the inline comments for example invocations.
 
 ## Roadmap ideas
 

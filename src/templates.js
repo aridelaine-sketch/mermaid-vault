@@ -10,13 +10,13 @@ window.VAULT_TEMPLATES = [
     name: 'Flowchart',
     tag: 'flow',
     code: `flowchart TD
-    Start([Start]) --> Input[/Gather requirements/]
+    Start([Start]) --> Input[Gather requirements]
     Input --> Decision{Ready to build?}
-    Decision -- No --> Input
-    Decision -- Yes --> Build[Build the thing]
+    Decision -->|No| Input
+    Decision -->|Yes| Build[Build the thing]
     Build --> Test{Tests pass?}
-    Test -- No --> Build
-    Test -- Yes --> Ship([Ship it])`
+    Test -->|No| Build
+    Test -->|Yes| Ship([Ship it])`
   },
   {
     id: 'sequence',

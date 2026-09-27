@@ -279,7 +279,13 @@
     $('#meta-updated').textContent = formatDate(d.updatedAt);
     renderTagChips(d);
     closeDrawer();
-    updatePreview();
+
+    // A newly-opened diagram always starts framed to fit; edits after that
+    // preserve whatever pan/zoom the person has set up. It also always
+    // opens on the Source tab — switching tabs re-parses fresh each time.
+    resetViewTransform();
+    renderPreviewNow(true);
+    switchSourceTab('source');
   }
 
   function closeEditor() {
@@ -291,25 +297,275 @@
     renderGrid();
   }
 
-  const updatePreview = debounce(async () => {
+  /* ---------------------------------------------------------------------
+   * Live preview: pan & zoom
+   *
+   * The rendered <svg> is locked to its true pixel size (overriding
+   * Mermaid's own inline max-width, the same fix used for PNG export) and
+   * a transform (translate + scale) is applied to its wrapper, #preview-
+   * render. Because the transform lives on the wrapper rather than the
+   * svg itself, replacing the svg's markup on every keystroke never wipes
+   * out the current pan/zoom — only opening a different diagram, or
+   * explicitly hitting "fit", resets the view.
+   * ------------------------------------------------------------------- */
+  const ZOOM_MIN = 0.1;
+  const ZOOM_MAX = 8;
+  let viewTransform = { scale: 1, x: 0, y: 0 };
+  let currentSvgSize = null;
+
+  function getSvgNaturalSize(svgEl) {
+    const viewBox = svgEl.getAttribute('viewBox');
+    if (viewBox) {
+      const parts = viewBox.trim().split(/\s+/).map(Number);
+      if (parts.length === 4 && parts[2] > 0 && parts[3] > 0) return { w: parts[2], h: parts[3] };
+    }
+    return {
+      w: parseFloat(svgEl.getAttribute('width')) || 800,
+      h: parseFloat(svgEl.getAttribute('height')) || 600
+    };
+  }
+
+  function resetViewTransform() {
+    viewTransform = { scale: 1, x: 0, y: 0 };
+    currentSvgSize = null;
+  }
+
+  function applyTransform() {
+    $('#preview-render').style.transform =
+      `translate(${viewTransform.x}px, ${viewTransform.y}px) scale(${viewTransform.scale})`;
+    $('#zoom-label').textContent = Math.round(viewTransform.scale * 100) + '%';
+  }
+
+  function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+
+  function fitToView() {
+    const surface = $('#preview-surface');
+    if (!currentSvgSize) { viewTransform = { scale: 1, x: 0, y: 0 }; applyTransform(); return; }
+    const rect = surface.getBoundingClientRect();
+    const padding = 32;
+    const availW = Math.max(40, rect.width - padding);
+    const availH = Math.max(40, rect.height - padding);
+    const fitScale = Math.min(availW / currentSvgSize.w, availH / currentSvgSize.h);
+    const scale = clamp(Math.min(fitScale, 1.5), ZOOM_MIN, ZOOM_MAX);
+    viewTransform.scale = scale;
+    viewTransform.x = (rect.width - currentSvgSize.w * scale) / 2;
+    viewTransform.y = (rect.height - currentSvgSize.h * scale) / 2;
+    applyTransform();
+  }
+
+  function zoomBy(factor, clientX, clientY) {
+    const surface = $('#preview-surface');
+    const rect = surface.getBoundingClientRect();
+    const cx = clientX != null ? clientX - rect.left : rect.width / 2;
+    const cy = clientY != null ? clientY - rect.top : rect.height / 2;
+    const newScale = clamp(viewTransform.scale * factor, ZOOM_MIN, ZOOM_MAX);
+    const ratio = newScale / viewTransform.scale;
+    viewTransform.x = cx - (cx - viewTransform.x) * ratio;
+    viewTransform.y = cy - (cy - viewTransform.y) * ratio;
+    viewTransform.scale = newScale;
+    applyTransform();
+  }
+
+  async function renderPreviewNow(fit) {
     const code = $('#code-input').value;
     const banner = $('#error-banner');
     if (!code.trim()) {
       $('#preview-render').innerHTML = '';
+      currentSvgSize = null;
       banner.classList.add('hidden');
       return;
     }
     try {
       const svg = await renderMermaidToSvg(code);
       $('#preview-render').innerHTML = svg;
+      const svgEl = $('#preview-render svg');
+      if (svgEl) {
+        const size = getSvgNaturalSize(svgEl);
+        // Override Mermaid's own inline max-width (added for responsive
+        // embedding) so the diagram renders at true size and our own
+        // transform is what controls zoom, not the browser.
+        svgEl.style.setProperty('width', size.w + 'px', 'important');
+        svgEl.style.setProperty('height', size.h + 'px', 'important');
+        svgEl.style.setProperty('max-width', 'none', 'important');
+        currentSvgSize = size;
+      }
       banner.classList.add('hidden');
+      if (fit) fitToView(); else applyTransform();
     } catch (err) {
       banner.textContent = (err && err.message) ? err.message : 'This Mermaid code could not be parsed.';
       banner.classList.remove('hidden');
-      // Deliberately leave the last successful render in place, mirroring
-      // how a good code editor keeps the last good preview visible.
+      // Deliberately leave the last successful render (and the current
+      // pan/zoom) in place, mirroring how a good code editor keeps the
+      // last good preview visible while you fix a typo.
     }
-  }, 300);
+  }
+
+  const updatePreview = debounce(() => renderPreviewNow(false), 300);
+
+  function wirePreviewPanZoom() {
+    const surface = $('#preview-surface');
+
+    surface.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      const factor = Math.pow(1.0015, -e.deltaY);
+      zoomBy(factor, e.clientX, e.clientY);
+    }, { passive: false });
+
+    let panning = false;
+    let start = { x: 0, y: 0 };
+    let origin = { x: 0, y: 0 };
+
+    surface.addEventListener('mousedown', (e) => {
+      if (e.button !== 0) return;
+      panning = true;
+      start = { x: e.clientX, y: e.clientY };
+      origin = { x: viewTransform.x, y: viewTransform.y };
+      surface.classList.add('is-panning');
+    });
+    window.addEventListener('mousemove', (e) => {
+      if (!panning) return;
+      viewTransform.x = origin.x + (e.clientX - start.x);
+      viewTransform.y = origin.y + (e.clientY - start.y);
+      applyTransform();
+    });
+    window.addEventListener('mouseup', () => {
+      panning = false;
+      surface.classList.remove('is-panning');
+    });
+
+    surface.addEventListener('dblclick', () => fitToView());
+
+    $('#zoom-in-btn').addEventListener('click', () => zoomBy(1.25));
+    $('#zoom-out-btn').addEventListener('click', () => zoomBy(1 / 1.25));
+    $('#zoom-fit-btn').addEventListener('click', () => fitToView());
+
+    window.addEventListener('resize', debounce(() => {
+      if (!$('#editor-view').classList.contains('hidden')) fitToView();
+    }, 150));
+  }
+
+  /* ---------------------------------------------------------------------
+   * Visual flowchart editor (Source <-> Visual, bidirectional)
+   *
+   * Position never touches the Mermaid source (plain flowchart text has no
+   * coordinate system), so it's tracked separately per-diagram in
+   * `d.visual` and merged back in by id every time Visual mode is entered
+   * — only genuinely new nodes get auto-placed, so toggling tabs never
+   * scrambles a layout you've already arranged.
+   * ------------------------------------------------------------------- */
+  let visualEditor = null;
+  let sourceTab = 'source';
+
+  function initVisualEditor() {
+    const shapeSelect = $('#visual-shape-select');
+    shapeSelect.innerHTML = window.FlowGraph.SHAPES.map((s) => `<option value="${s.key}">${s.label}</option>`).join('');
+    const arrowLabels = {
+      arrow: 'Arrow', line: 'Line (no arrowhead)', dottedArrow: 'Dotted arrow',
+      dotted: 'Dotted line', thickArrow: 'Thick arrow', thick: 'Thick line'
+    };
+    const arrowSelect = $('#visual-arrow-select');
+    arrowSelect.innerHTML = window.FlowGraph.ARROWS.map((a) => `<option value="${a.key}">${arrowLabels[a.key] || a.key}</option>`).join('');
+
+    visualEditor = window.createVisualEditor($('#visual-canvas'), $('#visual-canvas-wrap'), {
+      onGraphChange: (model) => {
+        const code = window.FlowGraph.generate(model);
+        $('#code-input').value = code;
+        saveField('code', code);
+        persistVisualLayout(model);
+        renderPreviewNow(false);
+      },
+      onLayoutChange: (model) => persistVisualLayout(model),
+      onSelectionChange: (selection, obj) => {
+        const bar = $('#visual-inspector');
+        if (!selection) { bar.classList.add('hidden'); return; }
+        bar.classList.remove('hidden');
+        if (selection.type === 'node') {
+          $('#visual-inspector-label').textContent = 'Node';
+          shapeSelect.classList.remove('hidden');
+          arrowSelect.classList.add('hidden');
+          shapeSelect.value = obj.shape;
+        } else {
+          $('#visual-inspector-label').textContent = 'Connector';
+          arrowSelect.classList.remove('hidden');
+          shapeSelect.classList.add('hidden');
+          arrowSelect.value = obj.kind;
+        }
+      }
+    });
+  }
+
+  function persistVisualLayout(model) {
+    const d = currentDiagram();
+    if (!d) return;
+    d.visual = model;
+    touch(d);
+    persist();
+  }
+
+  function buildVisualModel(code, storedVisual) {
+    const r = window.FlowGraph.parse(code);
+    if (!r.ok) return r;
+    const model = r.model;
+    if (storedVisual) model.direction = storedVisual.direction || model.direction;
+    const storedById = new Map(((storedVisual && storedVisual.nodes) || []).map((n) => [n.id, n]));
+    let anyMissing = false;
+    for (const n of model.nodes) {
+      const s = storedById.get(n.id);
+      if (s && typeof s.x === 'number') { n.x = s.x; n.y = s.y; } else { anyMissing = true; }
+    }
+    if (anyMissing) {
+      const laidOut = window.FlowGraph.autoLayout(model, model.direction);
+      const laidOutById = new Map(laidOut.nodes.map((n) => [n.id, n]));
+      for (const n of model.nodes) {
+        if (typeof n.x !== 'number') { const lo = laidOutById.get(n.id); n.x = lo.x; n.y = lo.y; }
+      }
+    }
+    return { ok: true, model };
+  }
+
+  function switchSourceTab(tab) {
+    sourceTab = tab;
+    $('#tab-source-btn').classList.toggle('active', tab === 'source');
+    $('#tab-visual-btn').classList.toggle('active', tab === 'visual');
+    $('#code-input').classList.toggle('hidden', tab === 'visual');
+    $('#visual-pane').classList.toggle('hidden', tab === 'source');
+    if (tab !== 'visual') return;
+
+    const d = currentDiagram();
+    const result = buildVisualModel($('#code-input').value, d ? d.visual : null);
+    if (!result.ok) {
+      $('#visual-toolbar').classList.add('hidden');
+      $('#visual-canvas-wrap').classList.add('hidden');
+      $('#visual-inspector').classList.add('hidden');
+      $('.visual-hint').style.display = 'none';
+      $('#visual-unsupported').classList.remove('hidden');
+      $('#visual-unsupported-reason').textContent = result.error;
+      return;
+    }
+    $('#visual-unsupported').classList.add('hidden');
+    $('#visual-toolbar').classList.remove('hidden');
+    $('#visual-canvas-wrap').classList.remove('hidden');
+    $('.visual-hint').style.display = '';
+    $('#direction-select').value = result.model.direction;
+    visualEditor.loadModel(result.model);
+    if (d) persistVisualLayout(result.model);
+  }
+
+  function wireVisualEditorControls() {
+    $('#tab-source-btn').addEventListener('click', () => switchSourceTab('source'));
+    $('#tab-visual-btn').addEventListener('click', () => switchSourceTab('visual'));
+
+    $('#direction-select').addEventListener('change', (e) => visualEditor.setDirection(e.target.value));
+    $('#auto-arrange-btn').addEventListener('click', () => {
+      const model = window.FlowGraph.autoLayout(visualEditor.getModel());
+      visualEditor.loadModel(model);
+      persistVisualLayout(model);
+    });
+
+    $('#visual-shape-select').addEventListener('change', (e) => visualEditor.setSelectedShape(e.target.value));
+    $('#visual-arrow-select').addEventListener('change', (e) => visualEditor.setSelectedArrowKind(e.target.value));
+    $('#visual-delete-btn').addEventListener('click', () => visualEditor.deleteSelected());
+  }
 
   function saveField(field, value) {
     const d = currentDiagram();
@@ -426,16 +682,8 @@
     if (!d) return;
     const svgString = $('#preview-render svg') ? $('#preview-render').innerHTML : await renderMermaidToSvg(d.code);
 
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(svgString, 'image/svg+xml');
-    const svgEl = doc.documentElement;
-    const viewBox = svgEl.getAttribute('viewBox');
-    let w = parseFloat(svgEl.getAttribute('width')) || 800;
-    let h = parseFloat(svgEl.getAttribute('height')) || 600;
-    if (viewBox) {
-      const parts = viewBox.split(/\s+/).map(Number);
-      if (parts.length === 4) { w = parts[2]; h = parts[3]; }
-    }
+    const doc = new DOMParser().parseFromString(svgString, 'image/svg+xml');
+    const { w, h } = getSvgNaturalSize(doc.documentElement);
 
     const res = await window.vault.exportPng({
       svgMarkup: svgString,
@@ -528,6 +776,10 @@
    * Event wiring
    * ------------------------------------------------------------------- */
   function wireEvents() {
+    wirePreviewPanZoom();
+    initVisualEditor();
+    wireVisualEditorControls();
+
     $('#new-diagram-btn').addEventListener('click', () => { renderTemplateGrid(); showModal('#template-modal'); });
     $('#empty-new-btn').addEventListener('click', () => { renderTemplateGrid(); showModal('#template-modal'); });
     $('#close-template-modal').addEventListener('click', () => hideModal('#template-modal'));

@@ -130,6 +130,112 @@ async function runSmokeTestSequence(win) {
   await wait(500); // debounced live-preview render
   await snap('03-editor-live-preview.png');
 
+  console.log('SMOKE step: exercise pan & zoom on the live preview');
+  const panZoomResult = await run(`
+    const preview = document.querySelector('#preview-render');
+    const surface = document.querySelector('#preview-surface');
+    const label = () => document.querySelector('#zoom-label').textContent;
+    const t = () => preview.style.transform;
+    const rect = surface.getBoundingClientRect();
+
+    const initial = { t: t(), z: label() };
+
+    document.querySelector('#zoom-in-btn').click();
+    const afterZoomInBtn = { t: t(), z: label() };
+
+    surface.dispatchEvent(new WheelEvent('wheel', {
+      deltaY: -120, clientX: rect.left + rect.width / 2, clientY: rect.top + rect.height / 2,
+      bubbles: true, cancelable: true
+    }));
+    const afterWheel = { t: t(), z: label() };
+
+    surface.dispatchEvent(new MouseEvent('mousedown', { button: 0, clientX: rect.left + 60, clientY: rect.top + 60, bubbles: true }));
+    window.dispatchEvent(new MouseEvent('mousemove', { clientX: rect.left + 150, clientY: rect.top + 110, bubbles: true }));
+    window.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+    const afterPan = { t: t(), z: label() };
+
+    JSON.stringify({ initial, afterZoomInBtn, afterWheel, afterPan });
+  `);
+  await wait(150);
+  await snap('03b-panned-and-zoomed.png');
+
+  const pz = JSON.parse(panZoomResult);
+  console.log('SMOKE pan/zoom trace:', pz);
+  const parsePct = (z) => parseInt(z, 10);
+  if (parsePct(pz.afterZoomInBtn.z) <= parsePct(pz.initial.z)) throw new Error('Zoom-in button did not increase zoom%');
+  if (pz.afterWheel.z === pz.afterZoomInBtn.z) throw new Error('Wheel event did not change zoom%');
+  if (pz.afterPan.t === pz.afterWheel.t) throw new Error('Drag did not change the preview transform (pan had no effect)');
+
+  await run(`document.querySelector('#zoom-fit-btn').click(); true;`);
+  await wait(150);
+  await snap('03c-fit-reset.png');
+  const afterFit = await run(`document.querySelector('#zoom-label').textContent;`);
+  console.log('SMOKE zoom after fit:', afterFit);
+
+  console.log('SMOKE step: switch to Visual tab and verify the flowchart parsed');
+  const visualEntry = await run(`
+    document.querySelector('#tab-visual-btn').click();
+    const nodeCount = document.querySelectorAll('#visual-canvas [data-node]').length;
+    const edgeCount = document.querySelectorAll('#visual-canvas [data-edge]').length;
+    const unsupportedShown = !document.querySelector('#visual-unsupported').classList.contains('hidden');
+    JSON.stringify({ nodeCount, edgeCount, unsupportedShown });
+  `);
+  await wait(150);
+  await snap('07-visual-tab-parsed.png');
+  const ve = JSON.parse(visualEntry);
+  console.log('SMOKE visual parse result:', ve);
+  if (ve.unsupportedShown) throw new Error('Visual tab showed "unsupported" for our own flowchart template');
+  if (ve.nodeCount !== 6) throw new Error('Expected 6 parsed nodes, got ' + ve.nodeCount);
+  if (ve.edgeCount !== 7) throw new Error('Expected 7 parsed edges, got ' + ve.edgeCount);
+
+  console.log('SMOKE step: add a node visually and connect it, then verify Mermaid regenerated');
+  const addAndConnect = await run(`(async () => {
+    const editor = document.querySelector('#visual-canvas');
+    const wrapRect = editor.getBoundingClientRect();
+    // Add a new node via double-click on empty canvas space, well clear of existing nodes.
+    editor.dispatchEvent(new MouseEvent('dblclick', { clientX: wrapRect.left + 900, clientY: wrapRect.top + 120, bubbles: true }));
+    await new Promise(r => setTimeout(r, 80));
+
+    // Rename it via the floating label editor that should now be open.
+    const input = document.querySelector('.visual-label-editor');
+    const wasOpen = input && !input.classList.contains('hidden');
+    if (input) {
+      input.value = 'Notify team';
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    }
+    await new Promise(r => setTimeout(r, 80));
+
+    // Connect the "Ship" node's handle to our new node by dragging.
+    const shipHandle = document.querySelector('[data-handle="Ship"]');
+    const newNodeGroup = Array.from(document.querySelectorAll('[data-node]')).pop();
+    const handleRect = shipHandle.getBoundingClientRect();
+    const targetRect = newNodeGroup.getBoundingClientRect();
+    const startX = handleRect.left + handleRect.width / 2, startY = handleRect.top + handleRect.height / 2;
+    const endX = targetRect.left + targetRect.width / 2, endY = targetRect.top + targetRect.height / 2;
+    shipHandle.dispatchEvent(new MouseEvent('mousedown', { clientX: startX, clientY: startY, bubbles: true }));
+    window.dispatchEvent(new MouseEvent('mousemove', { clientX: (startX+endX)/2, clientY: (startY+endY)/2, bubbles: true }));
+    window.dispatchEvent(new MouseEvent('mousemove', { clientX: endX, clientY: endY, bubbles: true }));
+    window.dispatchEvent(new MouseEvent('mouseup', { clientX: endX, clientY: endY, bubbles: true }));
+    await new Promise(r => setTimeout(r, 80));
+
+    return JSON.stringify({ wasOpen, code: document.querySelector('#code-input').value });
+  })()`);
+  await wait(150);
+  await snap('08-visual-added-and-connected.png');
+  const ac = JSON.parse(addAndConnect);
+  console.log('SMOKE add+connect result, label editor was open:', ac.wasOpen);
+  console.log('SMOKE regenerated code:\\n' + ac.code);
+  if (!ac.wasOpen) throw new Error('Double-click on empty canvas did not open the label editor for the new node');
+  if (!ac.code.includes('Notify team')) throw new Error('Regenerated Mermaid code does not contain the new node\u2019s label');
+  if (!/Ship\([^)]*\)\s*-->\s*N\d+/.test(ac.code) && !ac.code.match(/Ship.*-->.*N\d+/)) {
+    throw new Error('Regenerated Mermaid code does not show an edge from Ship to the new node:\\n' + ac.code);
+  }
+
+  console.log('SMOKE step: switch back to Source and confirm it matches');
+  await run(`document.querySelector('#tab-source-btn').click(); true;`);
+  await wait(100);
+  await snap('09-back-to-source.png');
+
   console.log('SMOKE step: create a folder from inside the editor');
   await run(`document.querySelector('#add-folder-btn').click(); true;`);
   await wait(100);

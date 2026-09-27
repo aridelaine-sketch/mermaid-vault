@@ -91,11 +91,52 @@
 
       <div class="editor-body">
         <div class="pane pane-code">
-          <div class="pane-label">Mermaid source</div>
+          <div class="pane-label-row">
+            <div class="source-tabs" role="tablist">
+              <button id="tab-source-btn" class="source-tab active" data-tab="source" role="tab">Source</button>
+              <button id="tab-visual-btn" class="source-tab" data-tab="visual" role="tab">Visual</button>
+            </div>
+            <div id="visual-toolbar" class="visual-toolbar hidden">
+              <select id="direction-select" title="Layout direction" aria-label="Layout direction">
+                <option value="TD">Top → down</option>
+                <option value="LR">Left → right</option>
+                <option value="BT">Bottom → up</option>
+                <option value="RL">Right → left</option>
+              </select>
+              <button id="auto-arrange-btn" class="icon-btn" title="Auto-arrange nodes" aria-label="Auto-arrange">⤢</button>
+            </div>
+          </div>
+
           <textarea id="code-input" spellcheck="false" wrap="off" placeholder="flowchart TD&#10;    A --> B"></textarea>
+
+          <div id="visual-pane" class="visual-pane hidden">
+            <div id="visual-canvas-wrap" class="visual-canvas-wrap">
+              <svg id="visual-canvas" xmlns="http://www.w3.org/2000/svg"></svg>
+            </div>
+            <div id="visual-unsupported" class="visual-unsupported hidden">
+              <p class="visual-unsupported-title">Can&rsquo;t show this diagram visually yet</p>
+              <p id="visual-unsupported-reason" class="visual-unsupported-reason"></p>
+              <p class="visual-unsupported-hint">Nothing has been changed — keep editing in Source.</p>
+            </div>
+            <div id="visual-inspector" class="visual-inspector hidden">
+              <span id="visual-inspector-label" class="visual-inspector-label"></span>
+              <select id="visual-shape-select" class="hidden" aria-label="Node shape"></select>
+              <select id="visual-arrow-select" class="hidden" aria-label="Connector style"></select>
+              <button id="visual-delete-btn" class="danger">Delete</button>
+            </div>
+            <div class="visual-hint">Double-click empty space to add a node · drag the teal dot to connect · double-click to rename · click to select</div>
+          </div>
         </div>
         <div class="pane pane-preview">
-          <div class="pane-label">Live preview</div>
+          <div class="pane-label-row">
+            <span class="pane-label">Live preview</span>
+            <div class="zoom-controls">
+              <button id="zoom-out-btn" class="icon-btn" title="Zoom out (scroll down)" aria-label="Zoom out">−</button>
+              <span id="zoom-label" class="zoom-label">100%</span>
+              <button id="zoom-in-btn" class="icon-btn" title="Zoom in (scroll up)" aria-label="Zoom in">+</button>
+              <button id="zoom-fit-btn" class="icon-btn" title="Fit to view (double-click canvas)" aria-label="Fit to view">⤢</button>
+            </div>
+          </div>
           <div id="preview-surface" class="preview-surface">
             <div id="preview-render"></div>
           </div>
@@ -179,6 +220,8 @@
 </div>
 
 <script src="templates.js"></script>
+<script src="flowgraph.js"></script>
+<script src="visual-editor.js"></script>
 <script src="vendor/mermaid.min.js"></script>
 <script src="renderer.js"></script>
 </body>
